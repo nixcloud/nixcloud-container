@@ -1,3 +1,5 @@
+![nixcloud-container](logo/nixcloud.container.png)
+
 # What is nixcloud-container?
 
 `nixcloud-container` is a Nix based wrapper around LXC, mainly to manage unprivileged LXC containers within NixOS. The implementation shares the /nix/store between host and guest. 
