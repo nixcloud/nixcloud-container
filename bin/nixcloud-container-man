@@ -1,0 +1,134 @@
+.\" Manpage for nixcloud-container.
+.\" Visit https://github.com/nixcloud/nixcloud-container to correct errors or typos.
+.TH man 1 "25 JAN 2018" "1.0" "nixcloud-container man page"
+.SH NAME nixcloud-container – manages lxc container with a shared store between container and host system.
+
+.SH SYNOPSIS
+.BR nixcloud-container " { " create " | " update " | " destroy " | " list-generations " | " delete-generations " | " switch-generation " | " rollback " | " start " | " login " | " stop " | " terminate " | " list " | " show-ip " | " exists " | " state " | " help " } [ 
+.IR " container-name " " ]"
+
+.SH DESCRIPTION
+This command manages lxc container with a shared store between container and host system. If this is used in combination with nixcloud-webservices all needed lxc configurations can be anbaled in the configuration.nix of the hostsystem with the option ‘nixcloud.container.enable = true;’.
+
+.SH COMMANDS
+
+.TP 
+.BR "create container-name" " config-path [ " "-n" " nix-parameters ] [ " " -l" " lxc-parameters ]"
+
+creates a new LXC container. <container-name> is the name of the new created container. It has to be unique and is used to address the container. <config-path> is the path to the ‘configuration.nix’ of the container. The rootfs of the container will be created in the path /var/lib/lxc/container-name/rootfs.
+
+.B Example
+  $ echo “{pkgs, ...}:
+    {
+q        services.openssh.enable = true;
+        services.openssh.ports = [ 22 ];
+        environment.systemPackages = [ pkgs.dfc];
+    }” >> container_configuration.nix
+  $ nixcloud-container create foobar container_configuration.nix 
+  Creates a new generator with the name foobar with automatic generated ip.
+
+.TP 
+.BR "update " "container-name config-path [ " "-n" " nix-parameters ] [ " " -l" " lxc parameters ]"
+updates an existing container with the given name. If no configuration is specified the configuration  /var/lib/lxc/container-name/config is used instead. Every update generates a new generation of the container. If the container is already running the container will automatically switch to the new generation. If the container isn’t the container will boot into the new generation once he is started.
+
+
+.TP
+.BR "destroy " "container-name  [ " " -l" " lxc-parameters ]"
+destroys a container.
+
+.TP
+.BR list-generations " container-name"
+
+lists all generations of this container. Use 
+.B switch-generation
+to switch to one of the listed generations.
+
+.B Example
+   $ nixcloud-container list-generations myContainer
+     10  2018-01-17 14:41:55   
+     11  2018-01-19 13:28:02   (current)
+     12  2018-01-20 10:22:45
+
+
+
+.TP
+.BR delete-generations " container-name generations"
+
+deletes a single or multiple generations of this container. 
+
+.B Examples
+  $ nixcloud-container delete-generations myContainer 3 4 7
+  $ nixcloud-container delete-generations myContainer 30d
+
+.TP
+.BR switch-generation " container-name generation-id"
+
+switches the container to another generation. If the container is already running the container will automatically switch to the new generation. If the container isn’t the container will boot into the new generation once he is started.
+
+.TP
+.BR rollback " container-name"
+
+Switches the container to the “previous”generation of the container.
+
+
+.TP
+.BR start " container-name> [ " "-l"  " lxc-parameters]"
+
+starts the container.
+
+.B Example
+  $ nixcloud-container foobar -l -F
+  starts the container and logs into the shell. “-l -F” passes the “-F” flag thruegh to the lxc command which causes the shell to get attached to the container. 
+
+
+.TP
+.BR login " container-name [ " -l " lxc-parameters ]"
+
+opens a shell inside of the container. 
+
+.TP
+.BR stop " container-name [ " -l " lxc-parameters ]"
+
+shuts the container down. 
+
+.TP
+.BR terminate " container-name [ " -l " lxc-parameters ]" 
+
+immediately shuts the container down not waiting for services to close themselves. 
+
+.TP
+.BR list " [ " -l " lxc-parameters ]"
+
+lists all containers
+
+.TP
+.BR show-ip " container-name"
+
+showes the ip of the container
+
+.TP
+.BR exists " container-name"
+
+shows if a container with a given name exists.
+
+.TP
+.BR state " container-name"
+
+prints the current state of a container. 
+
+.B Example
+  $ nixcloud-container state foobar
+    State:          STOPPED   
+
+.TP
+.B help
+print this message. 
+
+.SH AUTHOR
+.B Paul Seitz & Joachim Schiele
+
+Nixcloud GmbH
+
+.SH COPYRIGHT
+.TP
+Copyright © 2018 Paul Seitz & Joachim Schiele

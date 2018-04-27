@@ -1,0 +1,495 @@
+#!/bin/sh
+set -e
+#check if a command is given else print the help
+if [ $# -le 0 ]
+  then
+    STATE="help"
+  else
+    STATE=$1
+    shift 1
+fi
+#export LXC_UPDATE_CONFIG_FORMAT=0
+#-------------some constants---------------------------
+#path where ips and names of containers are saved
+declare -r -x SAVE="/var/lib/nixcloud/container/"
+#the directory that containes all rootFS of all LXC containers
+declare -r -x ROOT_FS_HOME="/var/lib/lxc"
+
+#create the files which containes all used ips and names
+if [ ! -d $SAVE ]; then
+  mkdir -p $SAVE
+fi
+if [ ! -f  "$SAVE/ip" ]; then
+  touch "$SAVE/ip"
+fi
+if [ ! -f  "$SAVE/name" ]; then
+  touch "$SAVE/name"
+fi
+if [ ! -f  "$SAVE/fixedIp" ]; then
+  touch "$SAVE/fixedIp"
+fi
+if [ ! -f  "$SAVE/.container.exclusivelock" ]; then
+  touch "$SAVE/.container.exclusivelock"
+fi
+
+#------------begin function declaration---------------------------------
+#prints the help/small documentation
+function printHelp {
+  cat <<- EOF
+Usage: nixcloud-container create <container-name> <config-path> [-n <nix parameters>] [-l <lxc parameters>]
+       nixcloud-container update <container-name> <config-path> [-n <nix parameters>] [-l <lxc parameters>]
+       nixcloud-container destroy <container-name> [-l <lxc parameters>]
+
+       nixcloud-container list-generations <container-name>
+       nixcloud-container delete-generations <container-name> <generations>
+       nixcloud-container switch-generation <container-name> <generation id>
+       nixcloud-container rollback <container-name>
+
+       nixcloud-container start <container-name> [-l <lxc parameters>]
+       nixcloud-container login <container-name> [-l <lxc parameters>]
+       nixcloud-container stop <container-name> [-l <lxc parameters>]
+       nixcloud-container terminate <container-name> [-l <lxc parameters>]
+
+       nixcloud-container list [-l <lxc parameters>]
+       nixcloud-container show-ip <container-name>
+       nixcloud-container exists <container-name>
+       nixcloud-container state <container-name>
+       nixcloud-container help
+
+EOF
+}
+export -f printHelp
+
+#runs the update command inside a container
+function updateContainer {
+  if [ $# -le 0 ]
+    then
+      echo "error occured while updating container. This is a bug please report it."
+      exit 1
+  fi
+  NAME=$1
+  set +e
+  status=$(lxc-info -s -n "${NAME}" | grep RUNNING)
+
+  if [ "$status" != "" ]; then
+    echo "updating runnning container"
+    lxc-attach -n "${NAME}" -- /init/profile/container/bin/switch-to-configuration switch
+    exit $?
+  fi
+  set -e
+}
+export -f updateContainer
+#gets all the passthrugh arguments
+function getLxcNixParameter {
+  declare -g NIXCARGUMENTS=""
+  declare -g LXCARGUMENTS=""
+  while getopts ":n:l:" opt; do
+    case $opt in
+      n)
+        NIXCARGUMENTS="$NIXCARGUMENTS $OPTARG"
+        ;;
+      l)
+        LXCARGUMENTS="$LXCARGUMENTS $OPTARG"
+        ;;
+      \?)
+        echo "Invalid option: -$OPTARG" >&2
+        exit 1
+        ;;
+      :)
+        echo "Option -$OPTARG requires an argument." >&2
+        exit 1
+        ;;
+    esac
+  done
+  if [ "$LXCARGUMENTS" != "" ]; then
+    echo "lxc options ${LXCARGUMENTS}"
+  fi
+  if [ "$NIXCARGUMENTS" != "" ]; then
+    echo "nix options ${NIXCARGUMENTS}"
+  fi
+}
+export -f getLxcNixParameter
+
+#frees a container name and the ip the container has. Requires a Name as an argument
+function freeIp {
+  if [ $# -le 0 ]
+    then
+      echo "error occured while freeing the a new IP. This is a bug please report it."
+      exit 1
+  fi
+  declare -r CONTAINER_NAME=$1
+  declare -r fileIp="$SAVE/ip"
+  declare -r fileName="$SAVE/name"
+  (
+    /run/current-system/sw/bin/flock -n 200
+
+    declare -A ips
+    source -- "$fileIp" || exit
+    declare -A names
+    source -- "$fileName" || exit
+
+    declare -r ip=${names[$CONTAINER_NAME]}
+
+    unset ips[$ip]
+    unset names[$CONTAINER_NAME]
+
+    touch "${fileIp}_"
+    touch "${fileName}_"
+
+    declare -p ips > "${fileIp}_"
+    declare -p names > "${fileName}_"
+
+    mv "${fileIp}_" $fileIp
+    mv "${fileName}_" $fileName
+  ) 200>$SAVE/.container.exclusivelock
+}
+export -f freeIp
+
+#gets a new ip for the container
+function getIp {
+  if [ $# -le 0 ]
+    then
+      echo "error occured while calculating the a new IP. This is a bug please report it."
+      exit 1
+  fi
+  declare -r CONTAINER_NAME=$1
+
+  declare -g -i ip=2
+  fileIp="$SAVE/ip"
+  fileName="$SAVE/name"
+
+  exec {lock_fd}>$SAVE/.container.exclusivelock || exit 1
+  /run/current-system/sw/bin/flock -n "$lock_fd" || { echo "ERROR: flock() failed." >&2; exit 1; }
+
+
+    declare -A ips
+    source -- "$fileIp" || exit
+    declare -A names
+    source -- "$fileName" || exit
+
+    if [ ${names[$CONTAINER_NAME]} ]; then
+      ip=${names[$CONTAINER_NAME]}
+      echo "container ip found."
+    else
+
+      while [ -n "${ips[$ip]}" ]
+      do
+        ip=$(($ip + 1))
+
+        if [ $ip -ge 65535 ]
+          then
+            echo "all ip's are already in use"
+            exit 1;
+        fi
+      done
+
+      ips[$ip]=$CONTAINER_NAME
+      names[$CONTAINER_NAME]="$ip"
+
+      declare -p ips > "${fileIp}_"
+      declare -p names > "${fileName}_"
+
+      mv "${fileIp}_" $fileIp
+      mv "${fileName}_" $fileName
+
+      echo "container ip generated."
+    fi
+  /run/current-system/sw/bin/flock -u "$lock_fd"
+}
+export -f getIp
+
+function setFixedIp {
+  if [ $# -le 1 ]
+    then
+      echo "error occured while setting the fixed IP. This is a bug please report it."
+      exit 1
+  fi
+  declare -r CONTAINER_NAME=$1
+  declare -r IP=$2
+  declare -r fileFixedIp="$SAVE/fixedIp"
+  (
+    /run/current-system/sw/bin/flock -n 200
+
+    declare -A fixedIps
+    source -- "$fileFixedIp" || exit
+
+    fixedIps[$CONTAINER_NAME]=$IP
+
+    touch "${fileFixedIp}_"
+
+    declare -p fixedIps > "${fileFixedIp}_"
+
+    mv "${fileFixedIp}_" $fileFixedIp
+  ) 200>$SAVE/.container.exclusivelock
+}
+export -f setFixedIp
+
+
+function unsetFixedIp {
+  if [ $# -le 0 ]
+    then
+      echo "error occured while unsetting the fixed IP. This is a bug please report it."
+      exit 1
+  fi
+  declare -r CONTAINER_NAME=$1
+  declare -r fileFixedIp="$SAVE/fixedIp"
+  (
+    /run/current-system/sw/bin/flock -n 200
+
+    declare -A fixedIps
+    source -- "$fileFixedIp" || exit
+
+    unset fixedIps[$CONTAINER_NAME]
+
+    touch "${fileFixedIp}_"
+
+    declare -p fixedIps > "${fileFixedIp}_"
+
+    mv "${fileFixedIp}_" $fileFixedIp
+  ) 200>$SAVE/.container.exclusivelock
+}
+export -f unsetFixedIp
+#--------------------end function declaration----------------------------
+
+declare -r BASEDIR=$(dirname "$0")
+case $STATE in
+    --list|list)
+        getLxcNixParameter $@
+        lxc-ls "$LXCARGUMENTS"
+        exit 0
+        ;;
+    --stop|stop)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        if ! [ -n "$(lxc-ls --line | grep ^${NAME}\$)" ]; then
+          echo "container with name ${NAME} does not exist."
+          exit 1
+        fi
+        getLxcNixParameter $@
+        lxc-stop --name ${NAME} "$LXCARGUMENTS"
+        exit $?
+        ;;
+    --exists|exists)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        if ! [ -n "$(lxc-ls --line | grep ^${NAME}\$)" ]; then
+          echo "container with name ${NAME} does not exist."
+          exit 1
+        fi
+        echo "container with name ${NAME} does exist."
+        exit 0
+        ;;
+    --state|state)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        if ! [ -n "$(lxc-ls --line | grep ^${NAME}\$)" ]; then
+          echo "container with name ${NAME} does not exist."
+          exit 1
+        fi
+        lxc-info -s -n ${NAME}
+        exit $?
+        ;;
+    --terminate|terminate)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        if ! [ -n "$(lxc-ls --line | grep ^${NAME}\$)" ]; then
+          echo "container with name ${NAME} does not exist."
+          exit 1
+        fi
+        getLxcNixParameter $@
+        lxc-stop --name ${NAME} -k "$LXCARGUMENTS"
+        exit $?
+        ;;
+    --create|create)
+        source $BASEDIR/helper/nixcloud-container-create.sh "${@}"
+        exit 0
+        ;;
+    --start|start)
+        source $BASEDIR/helper/nixcloud-container-start.sh "${@}"
+        exit 0
+        ;;
+    --update|update)
+        source $BASEDIR/helper/nixcloud-container-update.sh "${@}"
+        exit 0
+        ;;
+    --login|login|attach|--attach)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            echo ""
+            printHelp
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        getLxcNixParameter $@
+        lxc-attach -n ${NAME}
+        exit 0
+        ;;
+    --destroy|destroy)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            echo ""
+            printHelp
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        getLxcNixParameter $@
+
+        set +e
+        lxc-destroy --name $NAME "$LXCARGUMENTS"
+        err=$?
+        rm "/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
+        set -e
+        freeIp $NAME
+        unsetFixedIp $NAME
+        exit $err
+        ;;
+    --show-ip|show-ip)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            echo ""
+            printHelp
+            exit 1
+        fi
+
+        NAME=$1
+        if ! [ -n "$(lxc-ls --line | grep ^${NAME}\$)" ]; then
+          echo "container with name ${NAME} does not exist."
+          exit 1
+        fi
+
+        NameMap="$SAVE/name"
+        declare -A names
+        source -- "$NameMap" || exit
+        ip="${names[$1]}"
+        if [ "$ip" == "" ]
+        then
+          fileFixedIp="$SAVE/fixedIp"
+          declare -A fixedIps
+          source -- "$fileFixedIp" || exit
+
+          ip="${fixedIps[$1]}"
+          if [ "$ip" =  "" ]
+          then
+            echo "ip couldn't be found" >&2; exit 1
+          else
+            echo "$ip"
+            exit 0
+          fi
+        fi
+        #check if $ip is an integer
+    #    re='^[0-9]+([.][0-9]+)?$'
+    #    if ! [[ $ip =~ $re ]] ; then
+    #       echo "ip couldn't be found" >&2; exit 1
+    #    fi
+        echo "10.101.$(($ip/256)).$(($ip%256))"
+        exit 0
+        ;;
+    --help|help)
+        man $BASEDIR/nixcloud-container-man
+        exit 0
+        ;;
+     --list-generations|list-generations)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            echo ""
+            printHelp
+            exit 1
+        fi
+        declare -r NAME=$1
+
+        profilePath="/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
+        nix-env -p "${profilePath}" "--list-generations"
+        exit $?
+        ;;
+     --switch-generation|switch-generation)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            echo ""
+            printHelp
+            exit 1
+        fi
+        if [ $# -le 1 ]
+          then
+            echo "no generation specified"
+            echo ""
+            printHelp
+            exit 1
+        fi
+        NAME=$1
+        shift 1
+        profilePath="/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
+        nix-env -p "${profilePath}" "--switch-generation" $@
+        updateContainer $NAME
+        exit $?
+        ;;
+     --delete-generations|delete-generations)
+         if [ $# -le 0 ]
+           then
+             echo "no container name specified"
+             echo ""
+             printHelp
+             exit 1
+         fi
+         if [ $# -le 1 ]
+           then
+             echo "no generation specified"
+             echo ""
+             printHelp
+             exit 1
+         fi
+         NAME=$1
+         shift 1
+         profilePath="/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
+         nix-env -p "${profilePath}" "--delete-generations" $@
+         updateContainer $NAME
+         exit $?
+         ;;
+      --rollback|rollback)
+          if [ $# -le 0 ]
+            then
+              echo "no container name specified"
+              echo ""
+              printHelp
+              exit 1
+          fi
+          NAME=$1
+          profilePath="/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
+          nix-env -p "${profilePath}" "--rollback"
+          if [ $? -ne 0 ]; then
+            exit $?
+          fi
+          updateContainer $NAME
+          exit $?
+          ;;
+esac
+#command not found --> display help
+echo "command $STATE not found"
+echo ""
+printHelp

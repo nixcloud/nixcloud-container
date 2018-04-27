@@ -1,0 +1,2 @@
+{config}:
+config.network.ip
