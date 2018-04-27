@@ -1,8 +1,8 @@
-# What is nixcloud.container?
+# What is nixcloud-container?
 
-`nixcloud.container` is a Nix based wrapper around LXC, mainly to manage unprivileged LXC containers within NixOS. The implementation shares the /nix/store between host and guest. 
+`nixcloud-container` is a Nix based wrapper around LXC, mainly to manage unprivileged LXC containers within NixOS. The implementation shares the /nix/store between host and guest. 
 
-`nixcloud.container` is inspired by [nixos-container](https://nixos.org/nixos/manual/#ch-containers) which are based on systemd-nspawn. We chose LXC over systemd-nspawn because of unprivileged users support among other security features. One day systemd-nspawn might be as good as LXC but until that day we'll support LXC.
+`nixcloud-container` is inspired by [nixos-container](https://nixos.org/nixos/manual/#ch-containers) which are based on systemd-nspawn. We chose LXC over systemd-nspawn because of unprivileged users support among other security features. One day systemd-nspawn might be as good as LXC but until that day we'll support LXC.
 
 # Requirements
 
@@ -11,9 +11,9 @@ It requires NixOS as OS and nixpkgs in version:
 * 18.03 
 * or newer
 
-The systemd of the LXC guest requires a patch, so all software in the container requires to be deployed from source. We might bring the patch into https://github.com/nixos/systemd but after the release of `nixcloud.container`.
+The systemd of the LXC guest requires a patch, so all software in the container requires to be deployed from source. We might bring the patch into https://github.com/nixos/systemd but after the release of `nixcloud-container`.
 
-# nixcloud.container features
+# nixcloud-container features
 
 * Easy to install
 
@@ -149,7 +149,7 @@ You can start/stop your containers manually. But if you want to start them after
 The host system and the guest system can be modified using these files:
 
 * The container is defined from [bin/helper/lxc-container.nix](bin/helper/lxc-container.nix)
-* The host extension can be found in [./modules/virtualisation/container.nix](https://github.com/nixcloud/nixcloud-webservices/modules/virtualisation/container.nix)
+* The host extension can be found in [./modules/virtualisation/container.nix](https://github.com/nixcloud/nixcloud-webservices/blob/master/modules/virtualisation/container.nix)
 
 ## Declarative vs. imperative container(s)
 
@@ -251,4 +251,4 @@ If you want to have IPv4 NATed internet in the container, then:
 
 # Tests
 
-The test implementation can be found in the [tests.nix](tests.nix) file.
+The test implementation can be found in the [test.nix](test.nix) file.
