@@ -19,7 +19,7 @@ The systemd of the LXC guest requires a patch, so all software in the container 
 
 * Easy to install
 
-    To set up your NixOS to run LXC-containers using `nixcloud-container` you simply have to set integrate 'nixcloud-containers' and configure it by adding `nixcloud.containers.enable = true;`
+    To set up your NixOS to run LXC-containers using `nixcloud-container` you simply have to set integrate 'nixcloud-containers' and configure it by adding `nixcloud.container.enable = true;`
 
 * Shared /nix/store
 
@@ -41,7 +41,7 @@ The easiest way to install `nixcloud-container` is by:
 
 2. After you added `nixcloud-webservices` you can add the following line to your configuration.nix and rebuild your system.
 
-        nixcloud.containers.enable = true;
+        nixcloud.container.enable = true;
 
     This will automatically prepare your users for unprivileged LXC containers. It will add a subGid and a subUid range for a `root` that will be used for the unprivileged container. It will also create two additional bridges for the container networks to be used.
 
