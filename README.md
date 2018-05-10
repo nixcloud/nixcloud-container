@@ -254,3 +254,9 @@ If you want to have IPv4 NATed internet in the container, then:
 # Tests
 
 The test implementation can be found in the [test.nix](test.nix) file.
+
+# License
+
+The license can be found in [LICENSE](LICENSE).
+
+For inquiries, please contact us at <info@nixcloud.io>.
