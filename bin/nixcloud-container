@@ -74,7 +74,14 @@ function updateContainer {
   if [ "$status" != "" ]; then
     echo "updating runnning container"
     lxc-attach -n "${NAME}" -- /init/profile/container/bin/switch-to-configuration switch
-    exit $?
+    err=$?
+    #currently this returns with exit code 2 for some mounting problems within lxc
+    #however those errors won't interfere with the update process. Hence it should
+    #be ok to return 0 instead.
+    if [ $err -eq 2 ]; then
+      exit 0
+    fi
+    exit $err
   fi
   set -e
 }
