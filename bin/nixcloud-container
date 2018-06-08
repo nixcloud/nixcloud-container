@@ -137,17 +137,19 @@ function freeIp {
 
     declare -r ip=${names[$CONTAINER_NAME]}
 
-    unset ips[$ip]
-    unset names[$CONTAINER_NAME]
+    if [[ ! -z "$ip" ]]; then
+      unset ips[$ip]
+      unset names[$CONTAINER_NAME]
 
-    touch "${fileIp}_"
-    touch "${fileName}_"
+      touch "${fileIp}_"
+      touch "${fileName}_"
 
-    declare -p ips > "${fileIp}_"
-    declare -p names > "${fileName}_"
+      declare -p ips > "${fileIp}_"
+      declare -p names > "${fileName}_"
 
-    mv "${fileIp}_" $fileIp
-    mv "${fileName}_" $fileName
+      mv "${fileIp}_" $fileIp
+      mv "${fileName}_" $fileName
+    fi
   ) 200>$SAVE/.container.exclusivelock
 }
 export -f freeIp
@@ -368,7 +370,7 @@ case $STATE in
         set +e
         lxc-destroy --name $NAME "$LXCARGUMENTS"
         err=$?
-        rm "/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
+        rm -f "/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
         set -e
         freeIp $NAME
         unsetFixedIp $NAME
