@@ -367,11 +367,20 @@ case $STATE in
         shift 1
         getLxcNixParameter $@
 
+        #check if container is running if so abort
         set +e
+        status=$(lxc-info -s -n "${NAME}" | grep RUNNING)
+        if [ "$status" != "" ]; then
+            echo "container $NAME is running"
+            exit 1
+        fi
+
         lxc-destroy --name $NAME "$LXCARGUMENTS"
         err=$?
+
         rm -f "/nix/var/nix/profiles/nixcloud-container/${NAME}/profile"
         set -e
+
         freeIp $NAME
         unsetFixedIp $NAME
         exit $err
