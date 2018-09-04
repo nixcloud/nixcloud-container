@@ -49,6 +49,7 @@ Usage: nixcloud-container create <container-name> <config-path> [-n <nix paramet
        nixcloud-container login <container-name> [-l <lxc parameters>]
        nixcloud-container stop <container-name> [-l <lxc parameters>]
        nixcloud-container terminate <container-name> [-l <lxc parameters>]
+       nixcloud-container run <container-name> <command>
 
        nixcloud-container list [-l <lxc parameters>]
        nixcloud-container show-ip <container-name>
@@ -298,7 +299,7 @@ case $STATE in
         echo "container with name ${NAME} does exist."
         exit 0
         ;;
-    --state|state)
+    --state|state|status|--status)
         if [ $# -le 0 ]
           then
             echo "no container name specified"
@@ -353,6 +354,26 @@ case $STATE in
         shift 1
         getLxcNixParameter $@
         lxc-attach -n ${NAME}
+        exit 0
+        ;;
+    --run|run)
+        if [ $# -le 0 ]
+          then
+            echo "no container name specified"
+            exit 1
+        fi
+        NAME=$1
+        if ! [ -n "$(lxc-ls --line | grep ^${NAME}\$)" ]; then
+          echo "container with name ${NAME} does not exist."
+          exit 1
+        fi
+        shift 1
+        if [ $# -le 0 ]
+          then
+            echo "no command specified"
+            exit 1
+        fi
+        lxc-attach --name $NAME -- "${@}"
         exit 0
         ;;
     --destroy|destroy)

@@ -97,6 +97,15 @@ shuts the container down.
 immediately shuts the container down not waiting for services to close themselves. 
 
 .TP
+.BR run " container-name command"
+
+runs a command within the container
+
+.B Example
+  $ nixcloud-container foobar run mkdir /tmp/bar
+  creates the folder /tmp/bar within the container foobar
+
+.TP
 .BR list " [ " -l " lxc-parameters ]"
 
 lists all containers
